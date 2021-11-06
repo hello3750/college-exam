@@ -1,0 +1,152 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Thu Oct 28 23:07:36 2021
+
+@author: user
+"""
+
+from selenium import webdriver
+import time
+import datetime
+from bs4 import BeautifulSoup
+import pandas as pd
+import re
+import os
+import requests
+
+
+def get_driver(p, driver):
+    url = f"https://www.ceec.edu.tw/xmfile?xsmsid=0J052424829869345634&page={p}"
+    driver.get(url)
+    time.sleep(3)
+    return driver, url
+
+#driver, url = get_driver(1, driver)
+
+
+def get_download_list(driver):
+    download = pd.DataFrame()
+    for p in range(1, 17):
+        driver, url = get_driver(p, driver)
+        soup = BeautifulSoup(driver.page_source, 'lxml')
+        clas_lt = []
+        clas = soup.find_all('td', class_= 'title')
+        for j in range(0, len(clas)):
+            jj = clas[j].text
+            if jj.find('寫') > -1:
+                continue
+            clas_lt.append(jj)
+            clas_lt.append(jj)
+        a_lt = []
+        a = soup.find_all('a', class_= 'file_ext file_pdf')
+        for i in range(0, len(a)):
+            ii = a[i].text
+            if ((ii.find('試題') == -1) and (ii.find('答案') == -1)) or (a[i]['title'].find('寫') > -1):
+                continue
+            i3 = [ii, a[i]['href']]
+            a_lt.append(i3)
+        clas_df = pd.DataFrame(clas_lt)
+        a_df = pd.DataFrame(a_lt)
+        concat_tmp = pd.concat([clas_df, a_df], axis = 1)
+        download = download.append(concat_tmp)
+    return download
+
+#driver = webdriver.Chrome()
+#time.sleep(3)
+#download = get_download_list(driver)
+
+
+def prepare_download(download):
+    D = download.copy()
+    D.columns = ['title', 'filename_p3','download_url']
+    D.reset_index(drop = True, inplace = True)
+    D['title'] = D['title'].apply(lambda x: re.sub(r'[\n\t ]', '', x))
+    D['title'] = D['title'].apply(lambda x: re.sub(r'（選擇題）|\(補考\)', '', x))
+    D['title'] = D['title'].apply(lambda x: re.sub(r'學年', '_學年', x))
+    D['path_l1'] = D['title'].apply(lambda x: x.split('_')[0])
+    D['path_l2'] = D['title'].apply(lambda x: x.split('_')[1])
+    D['title'] = D['title'].apply(lambda x: re.sub(r'_', '', x))
+    D['subject'] = D['path_l2'].apply(lambda x: x[-2:])
+    D['filename'] = D[['path_l1', 'subject', 'filename_p3']].apply(lambda x: ''.join(x), axis = 1)
+    D['new_download_url'] = D['download_url'].apply(lambda x: 'https://www.ceec.edu.tw'+x if x.startswith('/files') == True else x)
+    return D
+
+#D = prepare_download(download)
+
+
+def create_document(D):
+    pre_path = 'C:\\Users\\user\\Desktop\\igs\\download'
+    path_l1 = list(D['path_l1'].unique())
+    [os.makedirs(f"{pre_path}\\{x}") for x in path_l1]
+    path_l2 = list(D['path_l2'].unique())
+    [os.makedirs(f"{pre_path}\\{x}\\{x}{y}") for x in path_l1 for y in path_l2]
+    print('create_document completed')
+
+
+headers = '''   
+POST /xmfile/indexaction HTTP/1.1
+Host: www.ceec.edu.tw
+Connection: keep-alive
+sec-ch-ua: "Google Chrome";v="95", "Chromium";v="95", ";Not A Brand";v="99"
+Accept: */*
+Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+X-Requested-With: XMLHttpRequest
+sec-ch-ua-mobile: ?0
+User-Agent: Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/95.0.4638.54 Safari/537.36
+sec-ch-ua-platform: "Windows"
+Origin: https://www.ceec.edu.tw
+Sec-Fetch-Site: same-origin
+Sec-Fetch-Mode: cors
+Sec-Fetch-Dest: empty
+Referer: https://www.ceec.edu.tw/xmfile?xsmsid=0J052424829869345634
+Accept-Encoding: gzip, deflate, br
+Accept-Language: zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7
+Cookie: _ga=GA1.3.1615124759.1635348102; FSize=M; __RequestVerificationToken=vTFa7okgAGi3-4_gUpwV4rX6uhHB4nL0CFfuf8m4kL7Eozm_bexN3x1QeuFh9XfwP4Nt4Rlhe8ZXq-u3-_7DyaRrZNjF0mpci5LjPiBJuh01; _gid=GA1.3.607268621.1635846747; _gat=1
+'''
+
+
+def str2obj(s, s1 = ';', s2 = '='):
+    li = s.split(s1)
+    res = {}
+    for kv in li:
+        li2 = kv.split(s2)
+        if len(li2) > 1:
+            res[li2[0]] = li2[1]
+    return res
+
+#res = str2obj(headers, '\n', ': ')
+
+
+def download_file(headers, D):
+    requests.packages.urllib3.disable_warnings()
+    res = str2obj(headers, '\n', ': ')
+    pre_path = 'C:\\Users\\user\\Desktop\\igs\\download'
+    start_time = datetime.datetime.now()
+    print('start time: '+str(start_time.time()))
+    for k in range(0, len(D)):
+        download_url = D['new_download_url'][k]
+        r1 = requests.get(download_url, headers = res, verify = False)
+        path_l1 = D['path_l1'][k]
+        path_l2 = D['title'][k]
+        filename = D['filename'][k]
+        with open(f"{pre_path}\\{path_l1}\\{path_l2}\\{filename}.pdf", 'wb') as f:
+        	f.write(r1.content)
+        	f.close()
+    end_time = datetime.datetime.now()
+    print('end time: '+str(end_time.time()))
+    print('elapsed time: '+str(end_time - start_time))
+
+
+def main():
+    driver = webdriver.Chrome()
+    time.sleep(3)
+    download = get_download_list(driver)
+    D = prepare_download(download)
+    create_document(D)
+    download_file(headers, D)
+    return download, D
+
+
+if __name__ == '__main__':
+    download, D = main()
+
