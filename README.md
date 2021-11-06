@@ -1,3 +1,4 @@
-# igs
-Q1相關資料在king資料夾  
-Q2相關資料在ceec資料夾
+# 大學入學考試中心爬蟲
+● 本次使用【網路爬蟲】  
+● 爬蟲結果.pdf：爬蟲流程與結果  
+● ceec_crawler.txt：python程式碼
